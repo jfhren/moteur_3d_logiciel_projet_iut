@@ -1,0 +1,283 @@
+%%
+% Copyright © 2013 Jean-François Hren <jfhren@gmail.com>
+% This work is free. You can redistribute it and/or modify it under the
+% terms of the Do What The Fuck You Want To Public License, Version 2,
+% as published by Sam Hocevar. See the COPYING file for more details.
+%%
+
+\documentclass[nocorrections,iutinfo,logo,cadre]{ens-ustl}
+
+\usepackage{textcomp}
+\usepackage{pdflscape}
+
+\usepackage{listings}
+\lstset{language=[Ansi]C}
+\lstset{commentstyle=\tt\it}
+\lstset{keywordstyle=\tt\bf}
+\lstset{stringstyle=\tt\bf}
+%\lstset{directivestyle=\color[rgb]{0.85,0.43,0.83}}
+\lstset{basicstyle=\small\tt}
+\lstset{texcl=true}
+\lstset{extendedchars=true}
+\lstset{inputencoding=latin1}
+\lstset{showstringspaces=false}
+
+%\usepackage{hyperref}
+
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage[ruled]{algorithm}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{subfig}
+\usepackage{verbatim}
+\usepackage{fancyvrb}
+
+% Traduction de l'environnement algorithm
+\floatname{algorithm}{Algorithme}
+% J'utilise \LOOP et \ENDLOOP pour l'indentation pour les fonctions
+\renewcommand{\algorithmicloop}{}
+\renewcommand{\algorithmicendloop}{}
+% Pour changer le style des commentaires
+\renewcommand{\algorithmiccomment}[1]{ //\emph{#1}}
+
+\titre{3D logiciel et optimisation}
+\matiere{Projet Tuteuré - 2\ieme{} année}
+\date{2011-2012}
+\begin{document}
+
+\maketitle
+
+\section{Objectifs}
+
+Les deux principaux objectifs de ce projet sont de vous faire découvrir comment un environnement en 3D est transformé pour être affiché sur votre écran en 2D ainsi que de vous faire implémenter quelques techniques utilisées pour optimiser la vitesse d'affichage de cet environnement. La transformation se fera de manière logicielle et non matérielle, OpenGL ne sera donc pas utilisé ici. Le projet prendra ainsi la forme d'un challenge au sein du groupe où chaque binôme essaiera d'obtenir le plus grand nombre d'images par secondes pour différents environnements.
+
+Le langage utilisé sera le C couplé à l'utilisation de la bibliothèque logicielle SDL pour l'affichage 2D ainsi que la gestion des événements clavier. Une description succincte de la mise en {\oe}uvre de SDL sera présenté un peu plus loin dans ce document.
+
+Qui dit affichage d'environnements dit création d'environnements. Pour simplifier ce processus, nous utiliserons le principe des \textit{heightmaps} pour générer des terrains vallonnés. La création des heightmaps se fera au travers du logiciel de dessin vectoriel Inkscape permettant ainsi de faire varier la résolution de l'image finale librement. Nous utiliserons aussi Inkscape pour définir le trajet que devra suivre la caméra ainsi que son orientation lors des phases d'évaluation des performances. Une description plus complète est présente un peu plus loin dans ce document.
+
+\section{Description}
+\subsection{Transformation 3D vers 2D}
+
+La première étape dans l'affichage d'un environnement 3D est de savoir comment le projeter sur un écran 2D. Le premier concept impliqué ici est celui de la caméra. Elle représente le point de vue au sein de l'environnement 3D en terme de positionnement, d'orientation mais aussi du volume affiché à l'écran. En effet, tout comme l'{\oe}il humain à un champ visuel d'environ 180° le champ de vision de la caméra est limité par une pyramide tronquée comme décrite par la figure \ref{camera} en annexe. C'est ici une vue de profil de la pyramide tronquée formée par la zone grise. Ainsi tout point se trouvant à l'extérieure de cette zone grise ne sera pas projeté sur l'écran. Dans le cas présent, il faut déterminer la coordonnée de $x_\textrm{2D}$ qui est le point affiché sur l'écran en fonction du point $x_\textrm{3D}$ et du point d'origine de la caméra $x_\textrm{camera}$.
+
+Sur la figure \ref{projection} en annexe, les deux vues de profil de la pyramide tronquée sont représentées en haut et à droite. Les points noirs en haut et à droite sont les mêmes mais vus de deux points de vue différents. Les points ont les même coordonnées en 3D sur les axes $y$ et $z$ mais voient leur coordonnée $x$ diminuer. Le carré représente l'écran et les points noirs à l'intérieur de celui-ci sont la projection des points 3D sur l'écran 2D. Ainsi on peut observer que les points noirs se déplacent bien vers nous sur l'écran.
+
+Pour effectuer la projection d'un point 3D $(x_\textrm{3D}, y_\textrm{3D}, z_\textrm{3D})$ de l'environnement en un point 2D sur l'écran, il y a deux étapes. La première est nommée \textit{Camera Transform}. Elle consiste à faire un changement de repère pour passer le point 3D du repère de l'environnement à celui défini par la caméra. Pour ce faire, nous utiliserons les équations suivantes utilisant la position $(x_c, y_c, z_c)$ et l'orientation $(\theta_x, \theta_y, \theta_z)$ de la caméra au sein de l'environnement~:
+$$
+\begin{array}{lcl}
+x'_\textrm{3D} & = & \cos\theta_y(\sin\theta_z(y_\textrm{3D} - y_c) + \cos\theta_z(x_\textrm{3D} - x_c))-\sin\theta_y(z_\textrm{3D} - z_c)\\
+y'_\textrm{3D} & = & \sin\theta_x(\cos\theta_y(z_\textrm{3D} - z_c) + \sin\theta_y(\sin\theta_z (y_\textrm{3D} - y_c) + \cos\theta_z(x_\textrm{3D}-x_c)))\\
+               & ~ & \qquad + \cos\theta_x(\cos\theta_z(y_\textrm{3D} - y_c) - \sin\theta_z(x_\textrm{3D}-x_c))\\
+z'_\textrm{3D} & = & \cos\theta_x(\cos\theta_y(z_\textrm{3D} - z_c) + \sin\theta_y(\sin\theta_z (y_\textrm{3D} - y_c) + \cos\theta_z(x_\textrm{3D}-x_c)))\\
+               & ~ & \qquad - \sin\theta_x(\cos\theta_z(y_\textrm{3D} - y_c) - \sin\theta_z(x_\textrm{3D}-x_c))
+\end{array}
+$$
+
+Si la caméra ne peut pas tourner, le changement de repère se résume alors une simple translation~:
+$$
+\begin{array}{lcl}
+x'_\textrm{3D} & = & x_\textrm{3D} - x_c\\
+y'_\textrm{3D} & = & y_\textrm{3D} - y_c\\
+z'_\textrm{3D} & = & z_\textrm{3D} - z_c
+\end{array}
+$$
+
+Maintenant que nous avons le point 3D transformé $(x'_\textrm{3D}, y'_\textrm{3D}, z'_\textrm{3D})$ et appartenant au repère défini par la caméra, la deuxième étape est de projeter le point 3D pour obtenir un point 2D. Cette étape est nommée \textit{Camera Projection}. Cette opération est assez simple et repose principalement sur le théorème de Thalès (voir figure \ref{camera}.) Les équation utilisées pour obtenir le point 2D $(x_\textrm{2D}, y_\textrm{2D})$ sur l'écran sont~:
+$$
+\begin{array}{lcl}
+    x_\textrm{2D} & = & \lceil\textrm{width}((y'_\textrm{3D}f_n/x'_\textrm{3D})-f_l) / (f_r - f_l) \rceil\\
+    y_\textrm{2D} & = & \lceil\textrm{height}(1 - (((z'_\textrm{3D}f_n/x'_\textrm{3D})-f_d) / (f_t-f_d)))\rceil
+\end{array}
+$$
+avec la définition de la pyramide tronqué donnée par $(f_l,f_r,f_t,f_d,f_n,f_f)$ décrit par la figure \ref{pyramide} en annexe et $\textrm{width}$ et $\textrm{height}$ respectivement la résolution en largeur et en hauteur en pixels de l'écran. Il est à noter que le point $(0,0)$ sur l'écran se situe en haut à gauche, l'axe $y_\textrm{2D}$ étant donc inversé. La pyramide tronquée que nous allons utiliser dans ce projet sera définie par $(-1,1,1,-1,1.5,4096)$. La distance maximal d'affichage est donc de 4096 unités mais devra être paramétrable. On fera attention aux divisions par zéro.
+
+Dans ce projet, on se limitera à l'affichage en fil de fer de triangle. Nous venons de voir rapidement comment un point 3D est transformé en un point 2D sur l'écran, il faut maintenant les relier entre eux. Pour ce faire, vous utiliserez l'algorithme de tracé de segment de Bresenham.
+
+\subsection{Utilisation de SDL}
+
+Pour effectuer l'affichage 2D ainsi que la gestion des évènements clavier, nous utiliserons la bibliothèque logicielle SDL dans sa version 1.2. Nous allons maintenant présenter succinctement les fonctions de base permettant d'initialiser une fenêtre d'affichage de la dimension voulue et éventuellement en plein écran. Il vous est \emph{fortement} recommandé de faire un tour dans la documentation en ligne de SDL.\footnote{http://www.libsdl.org/cgi/docwiki.cgi}
+
+\subsubsection{Initialisation de SDL et de l'affichage}
+
+La première étape dans l'utilisation de la bibliothèque logicielle SDL est son initialisation. SDL est décomposée en sous-système que l'on peut démarrer ou non. Le premier qui nous intéresse et qui est le plus important est le sous-système vidéo. La fonction utilisée pour démarrer un ou plusieurs sous-systèmes est la suivante~:
+\begin{center}
+    \lstinline!int SDL_Init(Uint32 flags);!
+\end{center}
+
+Le paramètre \lstinline!flags! permet de définir quels sous-systèmes nous souhaitons initialiser. Dans notre cas, le paramètre serait \lstinline!SDL_INIT_VIDEO!. On veillera à traiter la valeur de retour et en cas d'erreur d'afficher sa nature par un appel à la fonction~:
+\begin{center}
+    \lstinline!char* SDL_GetError(void);!
+\end{center}
+
+Une fois le sous-système initialisé, il faut le paramétrer par un appel à la fonction~:
+\begin{center}
+    \lstinline!SDL_Surface* SDL_SetVideoMode(int width, int height, int bitsperpixel, Uint32 flags);!
+\end{center}
+\lstinline!width! et \lstinline!height! étant respectivement le nombre de pixel en largeur et en hauteur de la fenêtre, \lstinline!bitsperpixel! étant le nombre de bits représentant un pixel (vous mettrez \lstinline!0! pour simplifier) et \lstinline!flags! étant les options passées au système vidéo. Puisque nous allons travailler essentiellement au niveau des pixels affichés à l'écran et non avec des textures chargées en mémoire et comme recommandé par la documentation de SDL, nous passerons l'option \lstinline!SDL_SWSURFACE! pour travailler en mémoire système plutôt qu'en mémoire vidéo. Pour les détails sur ce choix, je vous recommande de vous référer à la documentation de SDL. Une autre option pouvant être passé est \lstinline!SDL_FULLSCREEN! permettant de demander un affichage en pleine écran. Pour passer plusieurs options, on utilisera le ou bit à bit du langage C \lstinline!|! tel que~:
+\begin{center}
+    \lstinline!SDL_SWSURFACE | SDL_FULLSCREEN!
+\end{center}
+
+Cette fonction retourne un pointeur vers le type \lstinline!SDL_Surface! qui représente la surface de l'écran. Nous nommerons cette surface \lstinline!screen! dans le reste du document. Le type \lstinline!SDL_Surface! vous est détaillé dans la documentation SDL.
+
+\subsubsection{Manipulation des pixels}
+
+Dans un premier temps et pour vous simplifier la vie, vous utiliserez la fonction \lstinline!SDL_FillRect! pour manipuler les pixels de la surface \lstinline!screen!. La prototype de cette fonction est le suivant~:
+\begin{center}
+    \lstinline!int SDL_FillRect(SDL_Surface *dst, SDL_Rect *dstrect, Uint32 color);!
+\end{center}
+Le premiere paramètre sera la surface \lstinline!screen!, le deuxième paramètre \lstinline!dstrect! définit le rectangle dans lequel la couleur représentée par le troisième paramètre \lstinline!color! sera appliquée. Voici un exemple de code permettant de dessiner un pixel noir à la position \lstinline!x,y!~:
+\begin{lstlisting}
+    SDL_Rect pixel = {0, 0, 1, 1};
+
+    pixel.x = x;
+    pixel.y = y;
+
+    if(SDL_FillRect(screen, &pixel, SDL_MapRGBA(screen->format, 0, 0, 0, 255)) == -1) {
+        fprintf(stderr, "Writing a pixel failed: %s\n", SDL_GetError());
+        SDL_Quit();
+        exit(EXIT_FAILURE);
+    }
+\end{lstlisting}
+
+Une fois les manipulations effectuer, il faut mettre à jour l'affichage en faisant un appel à la fonction~:
+\begin{center}
+    \lstinline!void SDL_UpdateRect(SDL_Surface *screen, Sint32 x, Sint32 y, Sint32 w, Sint32 h);!
+\end{center}
+avec comme paramètre \lstinline!screen,0,0,0,0! pour mettre à jour l'ensemble de l'écran.
+
+Il est a noter que \lstinline!screen! n'est pas réinitialisé automatiquement dans le sens où après un appel à \lstinline!SDL_UpdateRect!, \lstinline!screen! n'a pas été modifié. Il convient donc avant toute chose de remplir \lstinline!screen! d'une couleur pas défaut, par exemple blanc~:
+\begin{center}
+    \lstinline!SDL_FillRect(screen, NULL, SDL_MapRGBA(screen->format, 255,255,255,255));!
+\end{center}
+
+\subsubsection{Évènements clavier}
+
+Maintenant que nous savons comment afficher et modifier des pixels à l'écran, nous allons voir comment gérer les évènements clavier. Ceux-ci sont gérer par SDL qui les stockent dans une queue d'évènements n'attendant que d'être traités par nos soins. La fonction permettant d'extraire une évènement de la queue est la suivante~:
+\begin{center}
+    \lstinline!int SDL_PollEvent(SDL_Event *event);!
+\end{center}
+Cette fonction prend en paramètre un pointeur vers le type \lstinline!SDL_Event! et permettra d'obtenir toutes les informations relatives à l'évènement. Elle retournera \lstinline!1! si évènement a été extrait, \lstinline!0! sinon.
+
+Le type \lstinline!SDL_Event! est une union dont l'utilisation est un peu différente d'une structure. Dans le cadre de SDL, le champs \lstinline!type! permet de déterminer le type d'évènement que l'on vient d'extraire. Une fois le type déterminé, on accédera au champs correspondant. Dans notre cas, l'utilisation la plus courante sera quand la touche \textit{Échap} sera pressée ce qui correspond à avoir la valeur \lstinline!SDL_KEYDOWN! dans le champs \lstinline!type!. Le champs a utiliser alors sera \lstinline!key! de type \lstinline!SDL_KeyboardEvent!. Le code suivant permet de quitter le programme lorsque la touche Échap est pressée~:
+\begin{lstlisting}
+    SDL_Event event;
+    while(SDL_PollEvent(&event) != 0)
+        if((event.type == SDL_KEYDOWN) && (event.key.keysym.sym == SDLK_ESCAPE)) {
+            SDL_Quit();
+            exit(EXIT_SUCCESS);
+        }
+\end{lstlisting}
+
+\subsection{Format du fichier d'environnement}
+
+Pour définir l'environnement à afficher ainsi que le parcours de la caméra à l'intérieur de celui-ci, on utilisera le format de fichier SVG permettant de décrire une image vectorielle. L'intérêt d'utiliser un format vectoriel est qu'on facilement changer la résolution de l'image exportée sans devoir retoucher à la définition de l'environnement.
+
+Comme présenté au début de ce document, l'environnement se basera sur le principe des \textit{heightmaps}. C'est à dire que chaque pixel de l'image correspondra à un point dans l'environnement 3D. Ainsi la position du pixel au sein de l'image définira les coordonnées $x$ et $x$ du point 3D tandis que la couleur du pixel définira la coordonnée $z$ de ce même point 3D. On peut ainsi voir une heightmap comme une vue du dessus d'une carte en 3D où les points les plus élevés sont en noir (\lstinline!0xFFFFFFFF! en RGBA) et les points les plus bas sont en blanc (\lstinline!0x00000000! en RGBA). On peut ainsi deviner qu'une heightmap sera traditionnellement en noir et blanc et qu'une seule des composantes RGB nous intéressera.
+
+Tout comme un fichier vectoriel peut être exporté à une résolution plus élevée, il peut être aussi exporté à une résolution plus basse tout aussi facilement. L'intérêt d'avoir un environnement avec une plus faible résolution et donc avec moins de points 3D est l'utilisation du principe du niveau de détail (\textit{level of detail}(LOD) en anglais). Ce principe est de réduire le nombre de polygones au plus la distance augmente dans un environnement 3D. Ainsi les objets les plus éloignés seront moins détaillés que ceux juste à côté de nous. Il peut ainsi être intéressant dans notre recherche du plus haut nombre d'images par seconde d'implémenter un tel principe.
+
+Le polygone de base que vous utiliserez pour afficher l'environnement est le triangle et chaque triangle utilisera donc 3 points issus du heightmap pour être afficher. Il peut être intéressant d'optimiser leur affichage en utilisant le principe des \textit{triangle strip} présent dans OpenGL. Un exemple de modélisation de l'environnement par des triangles vous est montré par les figures \ref{triangle1} et \ref{triangle2} en annexe.
+
+On utilisera donc Inkscape qui est un logiciel d'imagerie vectorielle pour créer les fichiers d'environnement. En plus de contenir la heightmap, un fichier d'environnement contiendra le chemin ainsi que des indications d'orientation pour la caméra. Le chemin de la caméra sera défini par un chemin formé de courbe de Bézier cubique tracé sur un calque nommé "camera" dans Inkscape. L'idée est d'extraire les points de contrôle du chemin ainsi défini et de les utiliser pour déplacer la camera le long de ce chemin. En effet, à partir des points de contrôle et en utilisant la formule associée aux courbes de Bézier cubique, vous pouvez obtenir des coordonnées 2D en $x$ et $y$ suivant la courbe. L'altitude de la caméra doit varier pour garder une distance fixe entre elle et l'environnement. Cette distance sera de 2 unités par défaut mais devra être paramétrable.
+
+En plus du chemin, il faut définir l'orientation de la caméra le long de celui-ci. Pour simplifier les choses, on définit un ensemble de point le long de la trajectoire. À tout instant du trajet de la caméra, celle-ci devra s'orienter vers le point le plus proche et s'orientera suivant une vitesse de rotation définie vers le nouveau pour le plus proche. Un exemple est illustré par la figure \ref{trajet} en annexe.
+
+Pour simplier les choses, on supposera que les heightmaps ont une résolution verticale et horizontale qui soit une puissance de 2. Cela permet de diviser facilement la résolution par deux dans le cadre de la mise en place du principe de niveau de détail.
+
+Enfin pour étendre l'environnement en dehors des limites définies par la heightmap, on accolera à chaque bord de l'environnement un miroir de lui même. Pour bien comprendre la chose, référez vous à la figure \ref{miroir} en annexe. 
+
+Cette définition de fichier d'environnement vous laisse libre du ratio entre une unité de distance et un pixel dans la heightmap. Par exemple, si vous avancez de une unité dans votre environnement, de combien de pixel vous serez vous déplacé dans la heightmap. Par défaut, on supposera que le ratio est de 1.
+
+Il est \emph{fortement} encouragé de calculer hors-ligne ce qui peut l'être. N'hésitez donc pas à définir votre propre format de fichier contenant par exemple les points de passage de la caméra, la heightmap déjà simplifiée, etc...
+
+\subsection{Code fourni et outils logiciels conseillés}
+
+Pour vous mettre en route ainsi que pour vous aidez dans la compréhension du projet, nous vous fournissons quelques bout de code C ainsi qu'un fichier d'environnement au format SVG. Il vous est fortement recommandé d'y jeter un coup d'{\oe}il. Les codes fournis sont~:
+\begin{itemize}
+    \item Export du fichier SVG en heightmap au format BMP et des données de parcours et d'orientation de la caméra;
+    \item Lecture d'un fichier BMP (partiellement);
+    \item Initialisation de SDL, affichage d'un pixel et gestion de la touche Échap;
+    \item Calcul du nombre d'images par seconde.
+\end{itemize}
+Un makefile pour compiler ces trois fichiers vous est fourni aussi.
+
+Il vous est fortement recommandé d'utiliser GDB et Valgrind pour déboguer votre code et trouver les fuites mémoires. De plus pour évaluer quelle portion du code mérite d'être optimisé, il vous est conseillé d'utiliser Gprof. La documentation de ces 3 programmes est accessible en ligne, il vous est donc aussi conseillé de la lire.
+
+\section{Résumé et objectifs à atteindre}
+
+Vous aurez bien compris qu'il n'est fait qu'y qu'une brève introduction à tous les concepts nécessitant d'être mise en {\oe}uvre pour atteindre les différents objectifs. Le but premier est de développer votre autonomie surtout au niveau de la recherche de documentation ainsi que du partage du travail au sein du binôme. 
+
+\begin{itemize}
+    \item Affichage d'une heightmap en fil de fer et en utilisant des triangles;
+    \item Parcours et orientation de la caméra;
+    \item Navigation au clavier et à la souris;
+    \item Extension de l'environnement par effet miroir;
+    \item Aucun warning à la compilation;
+    \item Aucune fuite mémoire;
+    \item Optimisation du code;
+    \item Utilisation de technique d'optimisation comme le \textit{back-face culling}, les \textit{bounding volumes}, les \textit{quad-tree} ou le \textit{level of detail};
+    \item Évolution chiffrée des performances.
+\end{itemize}
+
+N'hésitez pas à créer d'une fichier d'environnement en utilisant Inkscape et de les partager avec les autres binômes. Un classement des meilleurs nombre d'images par seconde pour chaque fichier d'environnement sera publié sur Moodle.
+
+\pagebreak
+\section*{Annexe}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\textwidth]{./images/fig1.pdf}
+    \caption{Représentation de la caméra par une pyramide tronquée}
+    \label{camera}
+\end{figure}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\textwidth]{./images/fig2.pdf}
+    \caption{Projection d'un point 3D sur un écran 2D}
+    \label{projection}
+\end{figure}
+
+\begin{landscape}
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1.2\textwidth]{./images/fig3.pdf}
+    \caption{Dimension de la pyramide tronquée}
+    \label{pyramide}
+\end{figure}
+\end{landscape}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\textwidth]{./images/fig4.pdf}
+    \caption{Vu du dessus des triangles pour un environnement issus d'une heigthmap de 4x4 pixels}
+    \label{triangle1}
+\end{figure}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\textwidth]{./images/fig5.pdf}
+    \caption{Vu en perspective d'un environnement issus d'une heightmap de 4x4 pixels}
+    \label{triangle2}
+\end{figure}
+
+\begin{landscape}
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1.4\textwidth]{./images/fig6.pdf}
+    \caption{Trajet de la caméra le long d'un chemin avec changement d'orientation}
+    \label{trajet}
+\end{figure}
+\end{landscape}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\textwidth]{./images/fig7.pdf}
+    \caption{Extension de l'environnement par effet miroir}
+    \label{miroir}
+\end{figure}
+
+\end{document}
