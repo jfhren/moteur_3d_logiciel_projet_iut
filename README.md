@@ -1,5 +1,5 @@
-moteur_3d_logiciel_projet_iut
-=============================
+Moteur 3D logiciel - projet d'IUT
+=================================
 
 Sujet de projet tutoré sur l'implémentation et l'optimisation d'un moteur 3D logiciel.
 
